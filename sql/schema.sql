@@ -6,13 +6,19 @@ CREATE TABLE IF NOT EXISTS license_keys (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   expires_at TIMESTAMP WITH TIME ZONE,
   last_used_at TIMESTAMP WITH TIME ZONE,
-  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL
+  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  username TEXT UNIQUE,
+  password_hash TEXT,
+  hwid TEXT,
+  is_registered BOOLEAN DEFAULT false
 );
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_license_keys_key_hash ON license_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_license_keys_is_active ON license_keys(is_active);
 CREATE INDEX IF NOT EXISTS idx_license_keys_expires_at ON license_keys(expires_at);
+CREATE INDEX IF NOT EXISTS idx_license_keys_username ON license_keys(username);
+CREATE INDEX IF NOT EXISTS idx_license_keys_hwid ON license_keys(hwid);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE license_keys ENABLE ROW LEVEL SECURITY;
@@ -48,3 +54,9 @@ CREATE TRIGGER trigger_update_last_used_at
   FOR EACH ROW
   WHEN (OLD.last_used_at IS DISTINCT FROM NEW.last_used_at)
   EXECUTE FUNCTION update_last_used_at();
+
+-- Migration for existing tables (run if table already exists)
+-- ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS username TEXT UNIQUE;
+-- ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS password_hash TEXT;
+-- ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS hwid TEXT;
+-- ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS is_registered BOOLEAN DEFAULT false;

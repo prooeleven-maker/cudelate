@@ -18,6 +18,10 @@ export type Database = {
           expires_at: string | null
           last_used_at: string | null
           created_by: string | null
+          username: string | null
+          password_hash: string | null
+          hwid: string | null
+          is_registered: boolean
         }
         Insert: {
           id?: string
@@ -27,6 +31,10 @@ export type Database = {
           expires_at?: string | null
           last_used_at?: string | null
           created_by?: string | null
+          username?: string | null
+          password_hash?: string | null
+          hwid?: string | null
+          is_registered?: boolean
         }
         Update: {
           id?: string
@@ -36,6 +44,10 @@ export type Database = {
           expires_at?: string | null
           last_used_at?: string | null
           created_by?: string | null
+          username?: string | null
+          password_hash?: string | null
+          hwid?: string | null
+          is_registered?: boolean
         }
         Relationships: [
           {

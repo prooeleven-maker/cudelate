@@ -216,17 +216,17 @@ private:
     std::string apiPath;
 
 public:
-    LicenseValidator(const std::string& domain = "your-api-domain.vercel.app")
+    LicenseValidator(const std::string& domain = "cudelate.vercel.app")
         : apiDomain(domain), apiPath("/api/verify-key") {}
 
     /**
      * Validate a license key
-     * @param licenseKey The license key to validate
+     * @param licenseKey The license key to validate (format: FORTE-XXXX-XXXX-XXXX)
      * @return true if valid, false otherwise
      */
     bool validateLicenseKey(const std::string& licenseKey) {
         try {
-            // Hash the license key
+            // Hash the license key before sending to API
             std::string keyHash = SHA256Hasher::hash(licenseKey);
 
             // Create HTTP client
@@ -236,9 +236,9 @@ public:
                 return false;
             }
 
-            // Create JSON payload
+            // Create JSON payload with the hashed key
             std::stringstream jsonPayload;
-            jsonPayload << "{\"key\":\"" << licenseKey << "\"}";
+            jsonPayload << "{\"key\":\"" << keyHash << "\"}";
 
             // Send request
             std::string response = client.postRequest(apiPath, jsonPayload.str());
@@ -281,12 +281,13 @@ int main() {
     std::cout << std::endl;
 
     // Initialize license validator
-    // Replace "your-api-domain.vercel.app" with your actual Vercel domain
-    LicenseValidator validator("your-api-domain.vercel.app");
+    LicenseValidator validator("cudelate.vercel.app");
 
     // Get license key from user
     std::string licenseKey;
-    std::cout << "Enter your license key: ";
+    std::cout << "Enter your license key:" << std::endl;
+    std::cout << "Format: FORTE-XXXX-XXXX-XXXX" << std::endl;
+    std::cout << "> ";
     std::getline(std::cin, licenseKey);
 
     // Validate license

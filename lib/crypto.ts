@@ -2,11 +2,11 @@ import crypto from 'crypto'
 
 /**
  * Generate a random license key
- * Format: XXXX-XXXX-XXXX-XXXX where X is alphanumeric
+ * Format: FORTE-XXXX-XXXX-XXXX where X is alphanumeric
  */
 export function generateLicenseKey(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  const segments = 4
+  const segments = 3
   const segmentLength = 4
 
   const segmentsArray = []
@@ -18,7 +18,7 @@ export function generateLicenseKey(): string {
     segmentsArray.push(segment)
   }
 
-  return segmentsArray.join('-')
+  return 'FORTE-' + segmentsArray.join('-')
 }
 
 /**
