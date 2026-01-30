@@ -117,8 +117,6 @@ export async function POST(request: NextRequest) {
 
     logInfo(`Login success: ${username}`)
 
-    recall
-
     return NextResponse.json({
       success: true,
       expires_at: userData.expires_at,
@@ -153,3 +151,4 @@ export function DELETE() {
     { status: 405 }
   )
 }
+
