@@ -1,14 +1,18 @@
+export const runtime = 'edge';
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase'
-import crypto from 'crypto'
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password)
 
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
 const isConfigured = process.env.NEXT_PUBLIC_SUPABASE_URL &&
                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
                      process.env.SUPABASE_SERVICE_ROLE_KEY
-
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex')
-}
 
 function logError(context: string, error: any) {
   console.error(`[LOGIN ERROR] ${context}:`, error)
@@ -142,3 +146,4 @@ export async function PUT() {
 export async function DELETE() {
   return NextResponse.json({ error: 'Method not allowed. Use POST.' }, { status: 405 })
 }
+
