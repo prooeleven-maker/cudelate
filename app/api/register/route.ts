@@ -1,16 +1,24 @@
+export const runtime = 'edge'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase'
-import crypto from 'crypto'
 
-const isConfigured = process.env.NEXT_PUBLIC_SUPABASE_URL &&
-                     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-                     process.env.SUPABASE_SERVICE_ROLE_KEY
+const isConfigured =
+  !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+  !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+  !!process.env.SUPABASE_SERVICE_ROLE_KEY
 
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex')
+async function hashPassword(password: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password)
+
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
-function logError(context: string, error: any) {
+function logError(context: string, error: unknown) {
   console.error(`[REGISTER ERROR] ${context}:`, error)
 }
 
@@ -20,12 +28,19 @@ function logInfo(message: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseAdmin = getSupabaseAdmin()
-
-    if (!isConfigured || !supabaseAdmin) {
-      logError('Configuration', 'Supabase not configured')
+    if (!isConfigured) {
+      logError('Config', 'Supabase env vars missing')
       return NextResponse.json(
         { success: false, error: 'Service not configured' },
+        { status: 503 }
+      )
+    }
+
+    const supabaseAdmin = getSupabaseAdmin()
+    if (!supabaseAdmin) {
+      logError('Supabase', 'Client not initialized')
+      return NextResponse.json(
+        { success: false, error: 'Service unavailable' },
         { status: 503 }
       )
     }
@@ -33,18 +48,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { key, username, password, hwid } = body
 
-    logInfo(`Registration attempt for username: ${username}`)
-
     if (!key || !username || !password || !hwid) {
-      logInfo(`Missing fields - key:${!!key} username:${!!username} password:${!!password} hwid:${!!hwid}`)
       return NextResponse.json(
-        { success: false, error: 'All fields are required (key, username, password, hwid)' },
+        {
+          success: false,
+          error: 'All fields are required (key, username, password, hwid)',
+        },
         { status: 400 }
       )
     }
 
     if (username.length < 3 || username.length > 32) {
-      logInfo(`Invalid username length: ${username.length}`)
       return NextResponse.json(
         { success: false, error: 'Username must be between 3 and 32 characters' },
         { status: 400 }
@@ -52,12 +66,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (password.length < 6) {
-      logInfo('Password too short')
       return NextResponse.json(
         { success: false, error: 'Password must be at least 6 characters' },
         { status: 400 }
       )
     }
+
+    logInfo(`Registration attempt: ${username}`)
 
     const { data: existingUser } = await supabaseAdmin
       .from('license_keys')
@@ -66,7 +81,6 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (existingUser) {
-      logInfo(`Username already exists: ${username}`)
       return NextResponse.json(
         { success: false, error: 'Username already taken' },
         { status: 200 }
@@ -80,15 +94,14 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (keyError) {
-      logError('Database query', keyError)
+      logError('DB query', keyError)
       return NextResponse.json(
-        { success: false, error: 'Database error occurred' },
+        { success: false, error: 'Database error' },
         { status: 500 }
       )
     }
 
     if (!keyData) {
-      logInfo(`Invalid license key provided`)
       return NextResponse.json(
         { success: false, error: 'Invalid license key' },
         { status: 200 }
@@ -96,7 +109,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (!keyData.is_active) {
-      logInfo(`Inactive license key: ${key.substring(0, 8)}...`)
       return NextResponse.json(
         { success: false, error: 'License key is inactive' },
         { status: 200 }
@@ -106,7 +118,6 @@ export async function POST(request: NextRequest) {
     if (keyData.expires_at) {
       const expiresAt = new Date(keyData.expires_at)
       if (expiresAt <= new Date()) {
-        logInfo(`Expired license key: ${key.substring(0, 8)}...`)
         return NextResponse.json(
           { success: false, error: 'License key has expired' },
           { status: 200 }
@@ -115,23 +126,25 @@ export async function POST(request: NextRequest) {
     }
 
     if (keyData.is_registered) {
-      logInfo(`License key already registered: ${key.substring(0, 8)}...`)
       return NextResponse.json(
-        { success: false, error: 'License key already registered to another account' },
+        {
+          success: false,
+          error: 'License key already registered to another account',
+        },
         { status: 200 }
       )
     }
 
-    const passwordHash = hashPassword(password)
+    const passwordHash = await hashPassword(password)
 
     const { error: updateError } = await supabaseAdmin
       .from('license_keys')
       .update({
-        username: username,
+        username,
         password_hash: passwordHash,
-        hwid: hwid,
+        hwid,
         is_registered: true,
-        last_used_at: new Date().toISOString()
+        last_used_at: new Date().toISOString(),
       })
       .eq('id', keyData.id)
 
@@ -143,16 +156,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    logInfo(`Successfully registered user: ${username}`)
+    logInfo(`User registered: ${username}`)
 
     return NextResponse.json({
       success: true,
       expires_at: keyData.expires_at,
-      message: 'Account registered successfully!'
+      message: 'Account registered successfully!',
     })
-
   } catch (error) {
-    logError('Unexpected error', error)
+    logError('Unexpected', error)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }
@@ -160,14 +172,14 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
-  return NextResponse.json({ error: 'Method not allowed. Use POST.' }, { status: 405 })
+export function GET() {
+  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 })
 }
 
-export async function PUT() {
-  return NextResponse.json({ error: 'Method not allowed. Use POST.' }, { status: 405 })
+export function PUT() {
+  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 })
 }
 
-export async function DELETE() {
-  return NextResponse.json({ error: 'Method not allowed. Use POST.' }, { status: 405 })
+export function DELETE() {
+  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 })
 }
