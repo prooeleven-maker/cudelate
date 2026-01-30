@@ -1,15 +1,17 @@
+export const runtime = 'edge'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase'
 
-// Check if environment variables are configured
-const isConfigured = process.env.NEXT_PUBLIC_SUPABASE_URL &&
-                     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-                     process.env.SUPABASE_SERVICE_ROLE_KEY
+const isConfigured =
+  !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+  !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+  !!process.env.SUPABASE_SERVICE_ROLE_KEY
 
-// Rate limiting (simple in-memory store)
+// ⚠️ Rate limit simples (em memória do Edge — reinicia quando o worker reinicia)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
-const RATE_LIMIT_WINDOW = 60 * 1000 // 1 minute
-const RATE_LIMIT_MAX_REQUESTS = 10 // 10 requests per minute per IP
+const RATE_LIMIT_WINDOW = 60 * 1000 // 1 minuto
+const RATE_LIMIT_MAX_REQUESTS = 10
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now()
@@ -30,30 +32,33 @@ function checkRateLimit(ip: string): boolean {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabaseAdmin = getSupabaseAdmin()
-
-    // Check if Supabase is configured
-    if (!isConfigured || !supabaseAdmin) {
+    if (!isConfigured) {
       return NextResponse.json(
-        { valid: false, error: 'Service not configured. Please check environment variables.' },
+        { valid: false, error: 'Service not configured' },
         { status: 503 }
       )
     }
 
-    // Get client IP for rate limiting
-    const ip = request.headers.get('x-forwarded-for') ||
-               request.headers.get('x-real-ip') ||
-               'unknown'
+    const supabaseAdmin = getSupabaseAdmin()
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { valid: false, error: 'Service unavailable' },
+        { status: 503 }
+      )
+    }
 
-    // Check rate limit
+    const ip =
+      request.headers.get('x-forwarded-for') ||
+      request.headers.get('x-real-ip') ||
+      'unknown'
+
     if (!checkRateLimit(ip)) {
       return NextResponse.json(
-        { error: 'Too many requests. Please try again later.' },
+        { valid: false, error: 'Too many requests. Try again later.' },
         { status: 429 }
       )
     }
 
-    // Parse request body
     const body = await request.json()
     const { key } = body
 
@@ -64,15 +69,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Aqui esperamos que o cliente envie diretamente o hash exato (key_hash)
-    // Ex: 3c3f9c2d...
-
-    // Search for the key in database usando o hash enviado
+    // Espera receber o HASH exato da key
     const { data, error } = await supabaseAdmin
       .from('license_keys')
       .select('*')
       .eq('key_hash', key)
-      .single()
+      .maybeSingle()
 
     if (error || !data) {
       return NextResponse.json(
@@ -81,7 +83,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if key is active
     if (!data.is_active) {
       return NextResponse.json(
         { valid: false, error: 'License key is inactive' },
@@ -89,12 +90,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if key is expired
     if (data.expires_at) {
       const expiresAt = new Date(data.expires_at)
-      const now = new Date()
-
-      if (expiresAt <= now) {
+      if (expiresAt <= new Date()) {
         return NextResponse.json(
           { valid: false, error: 'License key has expired' },
           { status: 200 }
@@ -102,25 +100,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Key is valid! Update last_used_at
-    const { error: updateError } = await supabaseAdmin
+    // Atualiza last_used_at (não quebra se falhar)
+    await supabaseAdmin
       .from('license_keys')
       .update({ last_used_at: new Date().toISOString() })
       .eq('id', data.id)
 
-    if (updateError) {
-      console.error('Error updating last_used_at:', updateError)
-      // Don't fail the request if this update fails
-    }
-
     return NextResponse.json({
       valid: true,
       expires_at: data.expires_at,
-      message: 'License key is valid'
+      message: 'License key is valid',
     })
-
   } catch (error) {
-    console.error('Error validating license key:', error)
+    console.error('[VERIFY KEY ERROR]', error)
     return NextResponse.json(
       { valid: false, error: 'Internal server error' },
       { status: 500 }
@@ -128,24 +120,23 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Handle unsupported methods
-export async function GET() {
+export function GET() {
   return NextResponse.json(
-    { error: 'Method not allowed. Use POST.' },
+    { error: 'Method not allowed' },
     { status: 405 }
   )
 }
 
-export async function PUT() {
+export function PUT() {
   return NextResponse.json(
-    { error: 'Method not allowed. Use POST.' },
+    { error: 'Method not allowed' },
     { status: 405 }
   )
 }
 
-export async function DELETE() {
+export function DELETE() {
   return NextResponse.json(
-    { error: 'Method not allowed. Use POST.' },
+    { error: 'Method not allowed' },
     { status: 405 }
   )
 }
